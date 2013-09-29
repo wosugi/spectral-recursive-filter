@@ -19,4 +19,12 @@
       <Filter>Source File</Filter>
     </ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="common.hpp">
+      <Filter>Header File</Filter>
+    </ClInclude>
+    <ClInclude Include="convolution.hpp">
+      <Filter>Header File</Filter>
+    </ClInclude>
+  </ItemGroup>
 </Project>
