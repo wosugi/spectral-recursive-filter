@@ -1,7 +1,7 @@
 #pragma once
 
 //please change this options if you want.
-#define USE_SSE			//providing SSE computation
+//#define USE_SSE			//providing SSE computation
 #define USE_OPENCV2		//providing OpenCV2 interface
 
 const double PI=3.1415926535897932384626433832795;

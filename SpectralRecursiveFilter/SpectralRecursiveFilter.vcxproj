@@ -82,6 +82,7 @@
   <ItemGroup>
     <ClInclude Include="common.hpp" />
     <ClInclude Include="convolution.hpp" />
+    <ClInclude Include="spectral_recursive_filter.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

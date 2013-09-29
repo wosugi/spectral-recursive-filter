@@ -26,5 +26,8 @@
     <ClInclude Include="convolution.hpp">
       <Filter>Header File</Filter>
     </ClInclude>
+    <ClInclude Include="spectral_recursive_filter.hpp">
+      <Filter>Header File</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

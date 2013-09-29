@@ -5,6 +5,7 @@
 #include <cmath>
 #include <opencv2/opencv.hpp>
 #include "convolution.hpp"
+#include "spectral_recursive_filter.hpp"
 
 //Please set all the switches false when evaluating the calc time.
 const bool sw_show_output=false;
@@ -59,10 +60,11 @@ int main(int argc,char** argv)
 	cv::Mat_<float> src=image0/255.0f;
 	cv::Mat_<float> dst0(image0.size());
 	cv::Mat_<float> dstA(image0.size());
+	cv::Mat_<float> dstB(image0.size());
 
 	//test various Gaussian filters over a range of [2^-0.25,2^+4.0]
 	std::cerr<<cv::format("Image: (%4d,%4d) ",src.cols,src.rows)<<path<<std::endl;
-	std::cerr<<"  scale :   5s-Conv    OpenCV "<<std::endl;
+	std::cerr<<"  scale :   5s-Conv    OpenCV               SRF     "<<std::endl;
 	for(double octave=-0.25;octave<=4.0;octave+=0.25)
 	{
 		const double s=pow(2.0,octave); //scale (std. dev.) of Gaussian
@@ -80,21 +82,31 @@ int main(int argc,char** argv)
 		double timeA=(tickA1-tickA0)*1000.0/cv::getTickFrequency();
 		double snrA=calc_snr<float>(dst0,dstA,1.0);
 		
-		std::string fmt="%7.4f : %7.2fms %7.2fms (%6.2fdB)";
-		std::cerr<<cv::format(fmt.c_str(),s,time,timeA,snrA)<<std::endl;
+		int64 tickB0=cv::getTickCount();
+		spectral_recursive_filter::gauss srf_gauss(s,s);
+		srf_gauss.filter(src,dstB);
+		int64 tickB1=cv::getTickCount();
+		double timeB=(tickB1-tickB0)*1000.0/cv::getTickFrequency();
+		double snrB=calc_snr<float>(dst0,dstB,1.0);
+		
+		std::string fmt="%7.4f : %7.2fms %7.2fms (%6.2fdB) %7.2fms (%6.2fdB)";
+		std::cerr<<cv::format(fmt.c_str(),s,time,timeA,snrA,timeB,snrB)<<std::endl;
 		
 		if(sw_show_output)
 		{
 			cv::imshow("Input",src);
 			cv::imshow("Output (conv)",dst0);
 			cv::imshow("Output (ocv)",dstA);
+			cv::imshow("Output (srf)",dstB);
 			const float amp=50.0f;
 			cv::imshow("50x amplified error (ocv)",0.5f+(dstA-dst0)*amp);
+			cv::imshow("50x amplified error (srf)",0.5f+(dstB-dst0)*amp);
 			cv::waitKey();
 		}
 		if(sw_save_output)
 		{
 			cv::imwrite("../ocv.png",dstA*255.0f);
+			cv::imwrite("../srf.png",dstB*255.0f);
 		}
 	}
 	return 0;
