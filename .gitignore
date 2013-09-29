@@ -1,0 +1,13 @@
+
+Debug
+Release
+*.exe
+*.dll
+*.obj
+*.sdf
+*.opensdf
+*.suo
+*.user
+
+SpectralRecursiveFilter/Debug
+SpectralRecursiveFilter/Release
