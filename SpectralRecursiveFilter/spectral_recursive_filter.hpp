@@ -174,7 +174,7 @@ inline void gauss::filter_h<float>(int w,int h,float* src,float* dst)
 	const float cf12=float(table[K*1+1]*2.0/spectX[1]), cfR2=table[K*r+1];
 
 	float sum,a1,a2,b1,b2;
-	float d,e,delta;
+	float dA,dB,delta;
 	std::vector<float> buf(w); //to allow for src==dst
 	for(int y=0;y<h;++y)
 	{
@@ -195,36 +195,37 @@ inline void gauss::filter_h<float>(int w,int h,float* src,float* dst)
 		//the first pixel (x=0)
 		float* q=&dst[w*y];
 		q[0]=norm*(sum+a1+a2);
-		d=buf[atE(0+r+1)]-buf[atW(0-r)];
-		sum+=d;
+		dA=buf[atE(0+r+1)]-buf[atW(0-r)];
+		sum+=dA;
 
+		//the other pixels (0<x<w)
 		int x=1;
-		while(true) //ring buffers with the length of four
+		while(true) //four-length ring buffers
 		{
 			q[x]=norm*(sum+b1+b2);
-			e=d; d=buf[atE(x+r+1)]-buf[atW(x-r)]; delta=e-d;
-			sum+=d;
+			dB=buf[atE(x+r+1)]-buf[atW(x-r)]; delta=dA-dB;
+			sum+=dB;
 			a1+=-cf11*b1+cfR1*delta;
 			a2+=-cf12*b2+cfR2*delta;
 			x++; if(w<=x) break;
 			
 			q[x]=norm*(sum-a1-a2);
-			e=d; d=buf[atE(x+r+1)]-buf[atW(x-r)]; delta=e-d;
-			sum+=d;
+			dA=buf[atE(x+r+1)]-buf[atW(x-r)]; delta=dB-dA;
+			sum+=dA;
 			b1+=+cf11*a1+cfR1*delta;
 			b2+=+cf12*a2+cfR2*delta;
 			x++; if(w<=x) break;
 			
 			q[x]=norm*(sum-b1-b2);
-			e=d; d=buf[atE(x+r+1)]-buf[atW(x-r)]; delta=e-d;
-			sum+=d;
+			dB=buf[atE(x+r+1)]-buf[atW(x-r)]; delta=dA-dB;
+			sum+=dB;
 			a1+=-cf11*b1-cfR1*delta;
 			a2+=-cf12*b2-cfR2*delta;
 			x++; if(w<=x) break;
 			
 			q[x]=norm*(sum+a1+a2);
-			e=d; d=buf[atE(x+r+1)]-buf[atW(x-r)]; delta=e-d;
-			sum+=d;
+			dA=buf[atE(x+r+1)]-buf[atW(x-r)]; delta=dB-dA;
+			sum+=dA;
 			b1+=+cf11*a1-cfR1*delta;
 			b2+=+cf12*a2-cfR2*delta;
 			x++; if(w<=x) break;
@@ -316,6 +317,272 @@ inline void gauss::filter_v<float>(int w,int h,float* src,float* dst)
 			ws[3]=cfR2*delta+cf12*ws[4]-ws[3];
 		}
 	}
+}
+
+template<>
+inline void gauss::filter_sse_h<float>(int w,int h,float* src,float* dst)
+{
+	const int B=sizeof(__m128)/sizeof(float);
+	const int r=rx;
+	const float norm=float(1.0/(r+1+r));
+	std::vector<float> table(tableX.size());
+	for(int t=0;t<int(table.size());++t)
+		table[t]=float(tableX[t]);
+	
+	const float cf11=float(table[K*1+0]*2.0/spectX[0]), cfR1=table[K*r+0];
+	const float cf12=float(table[K*1+1]*2.0/spectX[1]), cfR2=table[K*r+1];
+	
+	//to allow for src==dst
+	std::vector<float> buf(B*w);
+
+	assert(h%B==0);
+	for(int y=0;y<h/B*B;y+=B)
+	{
+		std::copy(&src[w*y],&src[w*(y+B)],buf.begin());
+		
+		__m128 pv0=_mm_set_ps(buf[w*3+0],buf[w*2+0],buf[w*1+0],buf[w*0+0]);
+		__m128 pv1=_mm_set_ps(buf[w*3+1],buf[w*2+1],buf[w*1+1],buf[w*0+1]);
+		
+		__m128 sum=pv0;
+		__m128 a1=_mm_mul_ps(_mm_set1_ps(table[0]),pv0);
+		__m128 b1=_mm_mul_ps(_mm_set1_ps(table[0]),pv1);
+		__m128 a2=_mm_mul_ps(_mm_set1_ps(table[1]),pv0);
+		__m128 b2=_mm_mul_ps(_mm_set1_ps(table[1]),pv1);
+
+		for(int u=1;u<=r;++u)
+		{
+			const float* p0M=&buf[atW(0-u)];
+			const float* p1M=&buf[atW(1-u)];
+			const float* p0P=&buf[   (0+u)];
+			const float* p1P=&buf[   (1+u)];
+			__m128 pv0M=_mm_set_ps(p0M[w*3],p0M[w*2],p0M[w*1],p0M[w*0]);
+			__m128 pv1M=_mm_set_ps(p1M[w*3],p1M[w*2],p1M[w*1],p1M[w*0]);
+			__m128 pv0P=_mm_set_ps(p0P[w*3],p0P[w*2],p0P[w*1],p0P[w*0]);
+			__m128 pv1P=_mm_set_ps(p1P[w*3],p1P[w*2],p1P[w*1],p1P[w*0]);
+			__m128 sumA=_mm_add_ps(pv0M,pv0P);
+			__m128 sumB=_mm_add_ps(pv1M,pv1P);
+			
+			sum=_mm_add_ps(sum,sumA);
+			a1=_mm_add_ps(a1,_mm_mul_ps(_mm_set1_ps(table[K*u+0]),sumA));
+			b1=_mm_add_ps(b1,_mm_mul_ps(_mm_set1_ps(table[K*u+0]),sumB));
+			a2=_mm_add_ps(a2,_mm_mul_ps(_mm_set1_ps(table[K*u+1]),sumA));
+			b2=_mm_add_ps(b2,_mm_mul_ps(_mm_set1_ps(table[K*u+1]),sumB));
+		}
+		
+		//sliding convolution
+		float *pA,*pB;
+		__m128 pvA,pvB;
+		__m128 dvA,dvB,delta;
+		__m128 qv[B];
+
+		//the first four pixels (0<=x<B)
+		for(int x=0;x<B;x+=B)
+		{
+			//the first pixel (x=0)
+			qv[0]=_mm_mul_ps(_mm_set1_ps(norm),_mm_add_ps(sum,_mm_add_ps(a1,a2)));
+			
+			pA=&buf[atW(0-r  )]; pvA=_mm_set_ps(pA[w*3],pA[w*2],pA[w*1],pA[w*0]);
+			pB=&buf[   (0+r+1)]; pvB=_mm_set_ps(pB[w*3],pB[w*2],pB[w*1],pB[w*0]);
+			dvA=_mm_sub_ps(pvB,pvA);
+
+			sum=_mm_add_ps(sum,dvA);
+			//b1=_mm_sub_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(cfR1),delta),_mm_mul_ps(_mm_set1_ps(cf11),a1)),b1);
+			//b2=_mm_sub_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(cfR2),delta),_mm_mul_ps(_mm_set1_ps(cf12),a2)),b2);
+
+			//the second pixel (x=1)
+			qv[1]=_mm_mul_ps(_mm_set1_ps(norm),_mm_add_ps(sum,_mm_add_ps(b1,b2)));
+			
+			pA=&buf[atW(1-r  )]; pvA=_mm_set_ps(pA[w*3],pA[w*2],pA[w*1],pA[w*0]);
+			pB=&buf[   (1+r+1)]; pvB=_mm_set_ps(pB[w*3],pB[w*2],pB[w*1],pB[w*0]);
+			dvB=_mm_sub_ps(pvB,pvA);
+			delta=_mm_sub_ps(dvB,dvA);
+
+			sum=_mm_add_ps(sum,dvB);
+			a1=_mm_sub_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(cfR1),delta),_mm_mul_ps(_mm_set1_ps(cf11),b1)),a1);
+			a2=_mm_sub_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(cfR2),delta),_mm_mul_ps(_mm_set1_ps(cf12),b2)),a2);
+		
+			//the third pixel (x=2)
+			qv[2]=_mm_mul_ps(_mm_set1_ps(norm),_mm_add_ps(sum,_mm_add_ps(a1,a2)));
+		
+			pA=&buf[atW(2-r  )]; pvA=_mm_set_ps(pA[w*3],pA[w*2],pA[w*1],pA[w*0]);
+			pB=&buf[   (2+r+1)]; pvB=_mm_set_ps(pB[w*3],pB[w*2],pB[w*1],pB[w*0]);
+			dvA=_mm_sub_ps(pvB,pvA);
+			delta=_mm_sub_ps(dvA,dvB);
+
+			sum=_mm_add_ps(sum,dvA);
+			b1=_mm_sub_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(cfR1),delta),_mm_mul_ps(_mm_set1_ps(cf11),a1)),b1);
+			b2=_mm_sub_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(cfR2),delta),_mm_mul_ps(_mm_set1_ps(cf12),a2)),b2);
+
+			//the forth pixel (x=3)
+			qv[3]=_mm_mul_ps(_mm_set1_ps(norm),_mm_add_ps(sum,_mm_add_ps(b1,b2)));
+		
+			pA=&buf[atW(3-r  )]; pvA=_mm_set_ps(pA[w*3],pA[w*2],pA[w*1],pA[w*0]);
+			pB=&buf[   (3+r+1)]; pvB=_mm_set_ps(pB[w*3],pB[w*2],pB[w*1],pB[w*0]);
+			dvB=_mm_sub_ps(pvB,pvA);
+			delta=_mm_sub_ps(dvB,dvA);
+
+			sum=_mm_add_ps(sum,dvB);
+			a1=_mm_sub_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(cfR1),delta),_mm_mul_ps(_mm_set1_ps(cf11),b1)),a1);
+			a2=_mm_sub_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(cfR2),delta),_mm_mul_ps(_mm_set1_ps(cf12),b2)),a2);
+			
+			//output with transposition
+			_MM_TRANSPOSE4_PS(qv[0],qv[1],qv[2],qv[3]);
+			_mm_storeu_ps(&dst[w*(y+0)],qv[0]);
+			_mm_storeu_ps(&dst[w*(y+1)],qv[1]);
+			_mm_storeu_ps(&dst[w*(y+2)],qv[2]);
+			_mm_storeu_ps(&dst[w*(y+3)],qv[3]);
+		}
+		
+		//the other pixels (B<=x<w)
+		for(int x=B;x<w/B*B;x+=B) //four-length ring buffers
+		{
+			//the first pixel (x=0)
+			qv[0]=_mm_mul_ps(_mm_set1_ps(norm),_mm_add_ps(sum,_mm_add_ps(a1,a2)));
+
+			pA=&buf[atW(x+0-r  )]; pvA=_mm_set_ps(pA[w*3],pA[w*2],pA[w*1],pA[w*0]);
+			pB=&buf[atE(x+0+r+1)]; pvB=_mm_set_ps(pB[w*3],pB[w*2],pB[w*1],pB[w*0]);
+			dvA=_mm_sub_ps(pvB,pvA);
+			delta=_mm_sub_ps(dvA,dvB);
+
+			sum=_mm_add_ps(sum,dvA);
+			b1=_mm_sub_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(cfR1),delta),_mm_mul_ps(_mm_set1_ps(cf11),a1)),b1);
+			b2=_mm_sub_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(cfR2),delta),_mm_mul_ps(_mm_set1_ps(cf12),a2)),b2);
+
+			//the second pixel (x=1)
+			qv[1]=_mm_mul_ps(_mm_set1_ps(norm),_mm_add_ps(sum,_mm_add_ps(b1,b2)));
+		
+			pA=&buf[atW(x+1-r  )]; pvA=_mm_set_ps(pA[w*3],pA[w*2],pA[w*1],pA[w*0]);
+			pB=&buf[atE(x+1+r+1)]; pvB=_mm_set_ps(pB[w*3],pB[w*2],pB[w*1],pB[w*0]);
+			dvB=_mm_sub_ps(pvB,pvA);
+			delta=_mm_sub_ps(dvB,dvA);
+
+			sum=_mm_add_ps(sum,dvB);
+			a1=_mm_sub_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(cfR1),delta),_mm_mul_ps(_mm_set1_ps(cf11),b1)),a1);
+			a2=_mm_sub_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(cfR2),delta),_mm_mul_ps(_mm_set1_ps(cf12),b2)),a2);
+		
+			//the third pixel (x=2)
+			qv[2]=_mm_mul_ps(_mm_set1_ps(norm),_mm_add_ps(sum,_mm_add_ps(a1,a2)));
+		
+			pA=&buf[atW(x+2-r  )]; pvA=_mm_set_ps(pA[w*3],pA[w*2],pA[w*1],pA[w*0]);
+			pB=&buf[atE(x+2+r+1)]; pvB=_mm_set_ps(pB[w*3],pB[w*2],pB[w*1],pB[w*0]);
+			dvA=_mm_sub_ps(pvB,pvA);
+			delta=_mm_sub_ps(dvA,dvB);
+
+			sum=_mm_add_ps(sum,dvA);
+			b1=_mm_sub_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(cfR1),delta),_mm_mul_ps(_mm_set1_ps(cf11),a1)),b1);
+			b2=_mm_sub_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(cfR2),delta),_mm_mul_ps(_mm_set1_ps(cf12),a2)),b2);
+		
+			//the forth pixel (x=3)
+			qv[3]=_mm_mul_ps(_mm_set1_ps(norm),_mm_add_ps(sum,_mm_add_ps(b1,b2)));
+		
+			pA=&buf[atW(x+3-r  )]; pvA=_mm_set_ps(pA[w*3],pA[w*2],pA[w*1],pA[w*0]);
+			pB=&buf[atE(x+3+r+1)]; pvB=_mm_set_ps(pB[w*3],pB[w*2],pB[w*1],pB[w*0]);
+			dvB=_mm_sub_ps(pvB,pvA);
+			delta=_mm_sub_ps(dvB,dvA);
+
+			sum=_mm_add_ps(sum,dvB);
+			a1=_mm_sub_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(cfR1),delta),_mm_mul_ps(_mm_set1_ps(cf11),b1)),a1);
+			a2=_mm_sub_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(cfR2),delta),_mm_mul_ps(_mm_set1_ps(cf12),b2)),a2);
+			
+			//output with transposition
+			_MM_TRANSPOSE4_PS(qv[0],qv[1],qv[2],qv[3]);
+			_mm_storeu_ps(&dst[w*(y+0)+x],qv[0]);
+			_mm_storeu_ps(&dst[w*(y+1)+x],qv[1]);
+			_mm_storeu_ps(&dst[w*(y+2)+x],qv[2]);
+			_mm_storeu_ps(&dst[w*(y+3)+x],qv[3]);
+		}
+	}
+}
+template<>
+inline void gauss::filter_sse_v<float>(int w,int h,float* src,float* dst)
+{
+	assert(w%sizeof(__m128)==0);
+
+	const int B=sizeof(__m128)/sizeof(float);
+	const int r=ry;
+	const float norm=float(1.0/(r+1+r));
+	std::vector<float> table(tableY.size());
+	for(int t=0;t<int(table.size());++t)
+		table[t]=float(tableY[t]);
+
+	//work space to keep raster scanning
+	float* workspace=reinterpret_cast<float*>(_mm_malloc(sizeof(float)*(2*K+1)*w,sizeof(__m128)));
+	
+	//calculating the first and second terms
+	for(int x=0;x<w/B*B;x+=B)
+	{
+		float* ws=&workspace[(2*K+1)*x];
+		__m128 p0=_mm_load_ps(&src[x]);
+		__m128 p1=_mm_load_ps(&src[x+w]);
+		_mm_store_ps(&ws[B*0],p0);
+		_mm_store_ps(&ws[B*1],_mm_mul_ps(p1,_mm_set1_ps(table[0])));
+		_mm_store_ps(&ws[B*2],_mm_mul_ps(p0,_mm_set1_ps(table[0])));
+		_mm_store_ps(&ws[B*3],_mm_mul_ps(p1,_mm_set1_ps(table[1])));
+		_mm_store_ps(&ws[B*4],_mm_mul_ps(p0,_mm_set1_ps(table[1])));
+	}
+	for(int v=1;v<=r;++v)
+	{
+		for(int x=0;x<w/B*B;x+=B)
+		{
+			float* ws=&workspace[(2*K+1)*x];
+			__m128 sum0=_mm_add_ps(_mm_load_ps(&src[x+w*atN(0-v)]),_mm_load_ps(&src[x+w*(0+v)]));
+			__m128 sum1=_mm_add_ps(_mm_load_ps(&src[x+w*atN(1-v)]),_mm_load_ps(&src[x+w*(1+v)]));
+			_mm_store_ps(&ws[B*0],_mm_add_ps(_mm_load_ps(&ws[B*0]),sum0));
+			_mm_store_ps(&ws[B*1],_mm_add_ps(_mm_load_ps(&ws[B*1]),_mm_mul_ps(sum1,_mm_set1_ps(table[K*v+0]))));
+			_mm_store_ps(&ws[B*2],_mm_add_ps(_mm_load_ps(&ws[B*2]),_mm_mul_ps(sum0,_mm_set1_ps(table[K*v+0]))));
+			_mm_store_ps(&ws[B*3],_mm_add_ps(_mm_load_ps(&ws[B*3]),_mm_mul_ps(sum1,_mm_set1_ps(table[K*v+1]))));
+			_mm_store_ps(&ws[B*4],_mm_add_ps(_mm_load_ps(&ws[B*4]),_mm_mul_ps(sum0,_mm_set1_ps(table[K*v+1]))));
+		}
+	}
+	
+	const float cf11=float(table[K*1+0]*2.0/spectY[0]), cfR1=table[K*r+0];
+	const float cf12=float(table[K*1+1]*2.0/spectY[1]), cfR2=table[K*r+1];
+
+	//sliding convolution
+	for(int y=0;y<1;++y) //the first line (y=0)
+	{
+		float* q=&dst[w*y];
+		const float* p1N=&src[w*atN(y-r  )];
+		const float* p1S=&src[w*atS(y+r+1)];
+		for(int x=0;x<w/B*B;x+=B)
+		{
+			float* ws=&workspace[(2*K+1)*x];
+			const __m128 a0=_mm_load_ps(&ws[B*0]);
+			const __m128 a2=_mm_load_ps(&ws[B*2]);
+			const __m128 a4=_mm_load_ps(&ws[B*4]);
+			_mm_store_ps(&q[x],_mm_mul_ps(_mm_set1_ps(norm),_mm_add_ps(a0,_mm_add_ps(a2,a4))));
+
+			const __m128 d=_mm_sub_ps(_mm_load_ps(&p1S[x]),_mm_load_ps(&p1N[x]));
+			_mm_store_ps(&ws[B*0],_mm_add_ps(a0,d));
+		}
+	}
+	for(int y=1;y<h;++y) //the other lines
+	{
+		float* q=&dst[w*y];
+		const float* p0N=&src[w*atN(y-r-1)];
+		const float* p1N=&src[w*atN(y-r  )];
+		const float* p0S=&src[w*atS(y+r  )];
+		const float* p1S=&src[w*atS(y+r+1)];
+		for(int x=0;x<w/B*B;x+=B)
+		{
+			float* ws=&workspace[(2*K+1)*x];
+			const __m128 a0=_mm_load_ps(&ws[B*0]);
+			const __m128 a1=_mm_load_ps(&ws[B*1]);
+			const __m128 a3=_mm_load_ps(&ws[B*3]);
+			_mm_store_ps(&q[x],_mm_mul_ps(_mm_set1_ps(norm),_mm_add_ps(a0,_mm_add_ps(a1,a3))));
+
+			const __m128 d0=_mm_sub_ps(_mm_load_ps(&p0S[x]),_mm_load_ps(&p0N[x]));
+			const __m128 d1=_mm_sub_ps(_mm_load_ps(&p1S[x]),_mm_load_ps(&p1N[x]));
+			const __m128 delta=_mm_sub_ps(d1,d0);
+
+			_mm_store_ps(&ws[B*0],_mm_add_ps(a0,d1));
+			_mm_store_ps(&ws[B*1],_mm_sub_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(cfR1),delta),_mm_mul_ps(_mm_set1_ps(cf11),a1)),_mm_load_ps(&ws[B*2])));
+			_mm_store_ps(&ws[B*2],a1);
+			_mm_store_ps(&ws[B*3],_mm_sub_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(cfR2),delta),_mm_mul_ps(_mm_set1_ps(cf12),a3)),_mm_load_ps(&ws[B*4])));
+			_mm_store_ps(&ws[B*4],a3);
+		}
+	}
+	_mm_free(workspace);
 }
 
 //*************************************************************************************************
