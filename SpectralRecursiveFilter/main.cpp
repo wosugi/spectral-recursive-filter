@@ -7,6 +7,19 @@
 #include "convolution.hpp"
 #include "spectral_recursive_filter.hpp"
 
+#define CV_VERSION_NUMBER CVAUX_STR(CV_MAJOR_VERSION) CVAUX_STR(CV_MINOR_VERSION) CVAUX_STR(CV_SUBMINOR_VERSION)
+
+#ifdef _DEBUG
+#pragma comment(lib, "opencv_imgproc"CV_VERSION_NUMBER"d.lib")
+#pragma comment(lib, "opencv_highgui"CV_VERSION_NUMBER"d.lib")
+#pragma comment(lib, "opencv_contrib"CV_VERSION_NUMBER"d.lib")
+#else
+#pragma comment(lib, "opencv_imgproc"CV_VERSION_NUMBER".lib")
+#pragma comment(lib, "opencv_highgui"CV_VERSION_NUMBER".lib")
+#pragma comment(lib, "opencv_core"CV_VERSION_NUMBER".lib")
+#endif
+
+
 //Please set all the switches false when evaluating the calc time.
 const bool sw_show_output=false;
 const bool sw_save_output=false;
@@ -44,7 +57,7 @@ int main(int argc,char** argv)
 		std::cerr<<"Usage: srf [imagepath]"<<std::endl;
 		return 1;
 	}
-	
+
 	const std::string path(argv[1]);
 	cv::Mat image0=cv::imread(path,0); //loaded as a grayscale image
 	if(image0.empty())
