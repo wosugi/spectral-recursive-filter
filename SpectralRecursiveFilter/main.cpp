@@ -52,12 +52,12 @@ double calc_snr(const cv::Mat& image1,const cv::Mat& image2,double maxval=255.0)
 
 int main(int argc,char** argv)
 {
-	/*if(argc!=2)
+	if(argc!=2)
 	{
 		std::cerr<<"Usage: srf [imagepath]"<<std::endl;
 		return 1;
-	}*/
-	argv[1] = "../lenna.png";
+	}
+
 	const std::string path(argv[1]);
 	cv::Mat image0=cv::imread(path,0); //loaded as a grayscale image
 	if(image0.empty())
